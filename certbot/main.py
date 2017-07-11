@@ -82,6 +82,8 @@ def _get_and_save_cert(le_client, config, domains=None, certname=None, lineage=N
             lineage = le_client.obtain_and_enroll_certificate(domains, certname)
             if lineage is False:
                 raise errors.Error("Certificate could not be obtained")
+            elif lineage is not None:
+                hooks.deploy_hook(config, lineage.names(), lineage.live_dir)
     finally:
         hooks.post_hook(config)
 
@@ -161,14 +163,13 @@ def _handle_identical_cert_request(config, lineage):
                "Renew & replace the cert (limit ~5 per 7 days)"]
 
     display = zope.component.getUtility(interfaces.IDisplay)
-    response = display.menu(question, choices, "OK", "Cancel",
+    response = display.menu(question, choices,
                             default=0, force_interactive=True)
     if response[0] == display_util.CANCEL:
         # TODO: Add notification related to command-line options for
         #       skipping the menu for this case.
         raise errors.Error(
-            "User chose to cancel the operation and may "
-            "reinvoke the client.")
+            "Operation canceled. You may re-run the client.")
     elif response[1] == 0:
         return "reinstall", lineage
     elif response[1] == 1:
@@ -254,12 +255,14 @@ def _ask_user_to_confirm_new_names(config, new_domains, certname, old_domains):
     """
     if config.renew_with_new_domains:
         return
-    msg = ("Confirm that you intend to update certificate {0} "
-           "to include domains {1}. Note that it previously "
-           "contained domains {2}.".format(
+
+    msg = ("You are updating certificate {0} to include domains: {1}{br}{br}"
+           "It previously included domains: {2}{br}{br}"
+           "Did you intend to make this change?".format(
                certname,
-               new_domains,
-               old_domains))
+               ", ".join(new_domains),
+               ", ".join(old_domains),
+               br=os.linesep))
     obj = zope.component.getUtility(interfaces.IDisplay)
     if not obj.yesno(msg, "Update cert", "Cancel", default=True):
         raise errors.ConfigurationError("Specified mismatched cert name and domains.")
@@ -696,10 +699,10 @@ def renew(config, unused_plugins):
 
 def make_or_verify_needed_dirs(config):
     """Create or verify existence of config and work directories"""
-    util.make_or_verify_core_dir(config.config_dir, constants.CONFIG_DIRS_MODE,
-                            os.geteuid(), config.strict_permissions)
-    util.make_or_verify_core_dir(config.work_dir, constants.CONFIG_DIRS_MODE,
-                            os.geteuid(), config.strict_permissions)
+    util.set_up_core_dir(config.config_dir, constants.CONFIG_DIRS_MODE,
+                         os.geteuid(), config.strict_permissions)
+    util.set_up_core_dir(config.work_dir, constants.CONFIG_DIRS_MODE,
+                         os.geteuid(), config.strict_permissions)
 
 
 def set_displayer(config):
